@@ -1,0 +1,65 @@
+---
+# =============================================================
+# PersistentVolumeClaim — PostgreSQL
+# 10Gi storage for all 7 banking databases.
+# StorageClass "standard" works on most clusters (minikube,
+# GKE, EKS, Contabo K8s). Adjust storageClassName for your
+# specific cluster.
+# =============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/component: database
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+# =============================================================
+# PersistentVolumeClaim — Redis
+# 1Gi for OTP, JWT blacklist, and session cache.
+# =============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/component: cache
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+
+---
+# =============================================================
+# PersistentVolumeClaim — RabbitMQ
+# 2Gi for message persistence (durable queues).
+# =============================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-pvc
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/component: message-broker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: standard

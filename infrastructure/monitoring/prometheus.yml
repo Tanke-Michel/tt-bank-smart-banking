@@ -1,0 +1,168 @@
+# =============================================================
+# Prometheus Configuration — Smart Banking System
+# Scrapes metrics from all 8 Spring Boot Actuator endpoints
+#
+# Spring Boot services expose metrics at:
+#   /actuator/prometheus  (after adding micrometer-prometheus)
+# =============================================================
+
+global:
+  scrape_interval:     15s   # How often to scrape
+  evaluation_interval: 15s   # How often to evaluate alerting rules
+  scrape_timeout:      10s
+
+  # Labels added to all time series from this Prometheus
+  external_labels:
+    environment: 'production'
+    project:     'smart-banking'
+
+# =============================================================
+# Alerting rules file
+# =============================================================
+rule_files:
+  - "alert.rules.yml"
+
+# =============================================================
+# Alertmanager integration
+# =============================================================
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# =============================================================
+# Scrape configurations
+# =============================================================
+scrape_configs:
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # -----------------------------------------------------------
+  # API Gateway
+  # -----------------------------------------------------------
+  - job_name: 'api-gateway'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['api-gateway:8080']
+        labels:
+          service: 'api-gateway'
+          tier: 'gateway'
+
+  # -----------------------------------------------------------
+  # Auth Service
+  # -----------------------------------------------------------
+  - job_name: 'auth-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['auth-service:8081']
+        labels:
+          service: 'auth-service'
+          tier: 'backend'
+
+  # -----------------------------------------------------------
+  # Wallet Service
+  # -----------------------------------------------------------
+  - job_name: 'wallet-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['wallet-service:8082']
+        labels:
+          service: 'wallet-service'
+          tier: 'backend'
+
+  # -----------------------------------------------------------
+  # Transaction Service
+  # -----------------------------------------------------------
+  - job_name: 'transaction-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['transaction-service:8083']
+        labels:
+          service: 'transaction-service'
+          tier: 'backend'
+
+  # -----------------------------------------------------------
+  # Merchant Service
+  # -----------------------------------------------------------
+  - job_name: 'merchant-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['merchant-service:8084']
+        labels:
+          service: 'merchant-service'
+          tier: 'backend'
+
+  # -----------------------------------------------------------
+  # Notification Service
+  # -----------------------------------------------------------
+  - job_name: 'notification-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['notification-service:8085']
+        labels:
+          service: 'notification-service'
+          tier: 'backend'
+
+  # -----------------------------------------------------------
+  # Savings Service
+  # -----------------------------------------------------------
+  - job_name: 'savings-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['savings-service:8086']
+        labels:
+          service: 'savings-service'
+          tier: 'backend'
+
+  # -----------------------------------------------------------
+  # Audit Service
+  # -----------------------------------------------------------
+  - job_name: 'audit-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['audit-service:8087']
+        labels:
+          service: 'audit-service'
+          tier: 'backend'
+
+  # -----------------------------------------------------------
+  # PostgreSQL — via postgres_exporter
+  # -----------------------------------------------------------
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgresql'
+          tier: 'infrastructure'
+
+  # -----------------------------------------------------------
+  # RabbitMQ — via rabbitmq_exporter
+  # -----------------------------------------------------------
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+        labels:
+          service: 'rabbitmq'
+          tier: 'infrastructure'
+
+  # -----------------------------------------------------------
+  # Node Exporter — VPS host metrics (CPU, RAM, disk)
+  # -----------------------------------------------------------
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'vps-host'
+          tier: 'infrastructure'

@@ -1,0 +1,382 @@
+// =============================================================
+// Smart Banking System — Jenkinsfile
+// Declarative Pipeline
+//
+// Stages:
+//   1. Checkout         — clone from GitHub
+//   2. Build            — Maven build for all 8 services
+//   3. Test             — run unit + integration tests
+//   4. Coverage Check   — enforce 80% minimum
+//   5. Docker Build     — build all container images
+//   6. Docker Push      — push to Docker registry
+//   7. Deploy           — rolling update on Contabo VPS via SSH
+//   8. Smoke Test       — verify all /actuator/health endpoints
+//   9. Notify           — send result to team
+//
+// Jenkins Credentials Required (configure in Jenkins > Credentials):
+//   GITHUB_CREDENTIALS  — GitHub username/token
+//   DOCKER_CREDENTIALS  — Docker Hub username/password
+//   VPS_SSH_KEY         — SSH private key for Contabo VPS
+//   SMTP_CREDENTIALS    — Gmail App password (username+password)
+//   JWT_SECRET          — Secret text credential
+//   POSTGRES_PASSWORD   — Secret text
+//   REDIS_PASSWORD      — Secret text
+//   RABBITMQ_PASSWORD   — Secret text
+// =============================================================
+
+pipeline {
+    agent any
+
+    // -------------------------------------------------------
+    // Global environment — all stages can reference these
+    // -------------------------------------------------------
+    environment {
+        // Docker Hub repo — replace with your actual Docker Hub username
+        DOCKER_REGISTRY    = 'docker.io'
+        DOCKER_NAMESPACE   = 'ttbank'
+        IMAGE_TAG          = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(8)}"
+        LATEST_TAG         = 'latest'
+
+        // Contabo VPS
+        VPS_HOST           = credentials('VPS_HOST')
+        VPS_USER           = 'ubuntu'
+        DEPLOY_DIR         = '/opt/tt-bank'
+
+        // Services to build (space-separated)
+        SERVICES = 'api-gateway auth-service wallet-service transaction-service merchant-service notification-service savings-service audit-service'
+    }
+
+    // -------------------------------------------------------
+    // Pipeline options
+    // -------------------------------------------------------
+    options {
+        timeout(time: 60, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        timestamps()
+    }
+
+    // -------------------------------------------------------
+    // Trigger: build on every push to main / master
+    // -------------------------------------------------------
+    triggers {
+        githubPush()
+    }
+
+    stages {
+
+        // ---------------------------------------------------
+        // Stage 1 — Checkout
+        // ---------------------------------------------------
+        stage('Checkout') {
+            steps {
+                echo "=== Checking out source code ==="
+                checkout scm
+                script {
+                    env.GIT_AUTHOR = sh(
+                        script: 'git log -1 --format="%an"',
+                        returnStdout: true
+                    ).trim()
+                    env.GIT_MESSAGE = sh(
+                        script: 'git log -1 --format="%s"',
+                        returnStdout: true
+                    ).trim()
+                }
+                echo "Branch: ${env.GIT_BRANCH}"
+                echo "Commit: ${env.GIT_COMMIT}"
+                echo "Author: ${env.GIT_AUTHOR}"
+                echo "Message: ${env.GIT_MESSAGE}"
+            }
+        }
+
+        // ---------------------------------------------------
+        // Stage 2 — Build all 8 Spring Boot services in parallel
+        // ---------------------------------------------------
+        stage('Build') {
+            steps {
+                echo "=== Building all backend services ==="
+                script {
+                    def buildTasks = [:]
+                    env.SERVICES.tokenize(' ').each { service ->
+                        buildTasks[service] = {
+                            dir("Smart-Banking-System/services/${service}") {
+                                sh './mvnw clean package -DskipTests -q'
+                            }
+                        }
+                    }
+                    parallel buildTasks
+                }
+            }
+        }
+
+        // ---------------------------------------------------
+        // Stage 3 — Run all tests (unit + integration)
+        // ---------------------------------------------------
+        stage('Test') {
+            steps {
+                echo "=== Running tests for all services ==="
+                script {
+                    def testTasks = [:]
+                    env.SERVICES.tokenize(' ').each { service ->
+                        testTasks[service] = {
+                            dir("Smart-Banking-System/services/${service}") {
+                                sh '''
+                                    ./mvnw test \
+                                        -Dspring.profiles.active=test \
+                                        -Dsurefire.rerunFailingTestsCount=1 \
+                                        -q
+                                '''
+                            }
+                        }
+                    }
+                    parallel testTasks
+                }
+            }
+            post {
+                always {
+                    // Collect JUnit reports from all services
+                    junit allowEmptyResults: true,
+                          testResults: 'Smart-Banking-System/services/**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        // ---------------------------------------------------
+        // Stage 4 — Code Coverage Check (80% minimum)
+        // ---------------------------------------------------
+        stage('Coverage Check') {
+            steps {
+                echo "=== Verifying test coverage >= 80% ==="
+                script {
+                    env.SERVICES.tokenize(' ').each { service ->
+                        dir("Smart-Banking-System/services/${service}") {
+                            sh '''
+                                ./mvnw verify -DskipTests=false \
+                                    org.jacoco:jacoco-maven-plugin:0.8.11:report \
+                                    -q
+                            '''
+                        }
+                    }
+                }
+            }
+            post {
+                always {
+                    // Publish JaCoCo HTML reports
+                    publishHTML(target: [
+                        allowMissing:          true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll:               true,
+                        reportDir:             'Smart-Banking-System/services/auth-service/target/site/jacoco',
+                        reportFiles:           'index.html',
+                        reportName:            'JaCoCo Coverage Report'
+                    ])
+                }
+            }
+        }
+
+        // ---------------------------------------------------
+        // Stage 5 — Build Docker images for all services
+        // ---------------------------------------------------
+        stage('Docker Build') {
+            steps {
+                echo "=== Building Docker images — tag: ${IMAGE_TAG} ==="
+                script {
+                    def imageTasks = [:]
+
+                    // Build all backend services
+                    env.SERVICES.tokenize(' ').each { service ->
+                        imageTasks[service] = {
+                            dir("Smart-Banking-System/services/${service}") {
+                                sh """
+                                    docker build \
+                                        -t ${DOCKER_NAMESPACE}/${service}:${IMAGE_TAG} \
+                                        -t ${DOCKER_NAMESPACE}/${service}:${LATEST_TAG} \
+                                        .
+                                """
+                            }
+                        }
+                    }
+
+                    // Build frontend
+                    imageTasks['frontend'] = {
+                        dir("Smart-Banking-System/frontend") {
+                            sh """
+                                docker build \
+                                    --build-arg VITE_API_URL=/api \
+                                    -t ${DOCKER_NAMESPACE}/frontend:${IMAGE_TAG} \
+                                    -t ${DOCKER_NAMESPACE}/frontend:${LATEST_TAG} \
+                                    .
+                            """
+                        }
+                    }
+
+                    parallel imageTasks
+                }
+            }
+        }
+
+        // ---------------------------------------------------
+        // Stage 6 — Push images to Docker Hub
+        // ---------------------------------------------------
+        stage('Docker Push') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                echo "=== Pushing images to Docker Hub ==="
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'DOCKER_CREDENTIALS',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+                    sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+                    script {
+                        (env.SERVICES.tokenize(' ') + ['frontend']).each { service ->
+                            sh """
+                                docker push ${DOCKER_NAMESPACE}/${service}:${IMAGE_TAG}
+                                docker push ${DOCKER_NAMESPACE}/${service}:${LATEST_TAG}
+                            """
+                        }
+                    }
+                    sh 'docker logout'
+                }
+            }
+        }
+
+        // ---------------------------------------------------
+        // Stage 7 — Deploy to Contabo VPS (rolling update)
+        // ---------------------------------------------------
+        stage('Deploy') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                echo "=== Deploying to Contabo VPS ==="
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'VPS_SSH_KEY',
+                        keyFileVariable: 'SSH_KEY'
+                    ),
+                    string(credentialsId: 'JWT_SECRET',         variable: 'JWT_SECRET'),
+                    string(credentialsId: 'POSTGRES_PASSWORD',  variable: 'POSTGRES_PASSWORD'),
+                    string(credentialsId: 'REDIS_PASSWORD',     variable: 'REDIS_PASSWORD'),
+                    string(credentialsId: 'RABBITMQ_PASSWORD',  variable: 'RABBITMQ_PASSWORD'),
+                    usernamePassword(
+                        credentialsId: 'SMTP_CREDENTIALS',
+                        usernameVariable: 'SMTP_USERNAME',
+                        passwordVariable: 'SMTP_PASSWORD'
+                    )
+                ]) {
+                    sh """
+                        ssh -i ${SSH_KEY} \
+                            -o StrictHostKeyChecking=no \
+                            ${VPS_USER}@${VPS_HOST} '
+                                set -e
+
+                                # Pull latest images
+                                cd ${DEPLOY_DIR}
+                                docker compose pull
+
+                                # Write fresh .env from Jenkins secrets
+                                cat > .env << ENVEOF
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+REDIS_PASSWORD=${REDIS_PASSWORD}
+RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+JWT_SECRET=${JWT_SECRET}
+SMTP_USERNAME=${SMTP_USERNAME}
+SMTP_PASSWORD=${SMTP_PASSWORD}
+APP_BASE_URL=http://\$(curl -s ifconfig.me)
+VITE_API_URL=/api
+ENVEOF
+
+                                # Rolling restart — zero downtime
+                                docker compose up -d --no-build
+
+                                # Remove dangling images
+                                docker image prune -f
+                            '
+                    """
+                }
+            }
+        }
+
+        // ---------------------------------------------------
+        // Stage 8 — Smoke Tests (verify all services healthy)
+        // ---------------------------------------------------
+        stage('Smoke Test') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                echo "=== Running smoke tests against deployed services ==="
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: 'VPS_SSH_KEY',
+                        keyFileVariable: 'SSH_KEY'
+                    )
+                ]) {
+                    sh """
+                        ssh -i ${SSH_KEY} \
+                            -o StrictHostKeyChecking=no \
+                            ${VPS_USER}@${VPS_HOST} '
+                                set -e
+                                echo "Waiting 30s for services to stabilize..."
+                                sleep 30
+
+                                check() {
+                                    local url=\$1
+                                    local name=\$2
+                                    local status=\$(curl -s -o /dev/null -w "%{http_code}" \$url)
+                                    if [ "\$status" = "200" ]; then
+                                        echo "  PASS: \$name (\$url)"
+                                    else
+                                        echo "  FAIL: \$name (\$url) — HTTP \$status"
+                                        exit 1
+                                    fi
+                                }
+
+                                check http://localhost:8080/actuator/health "API Gateway"
+                                check http://localhost:8081/actuator/health "Auth Service"
+                                check http://localhost:8082/actuator/health "Wallet Service"
+                                check http://localhost:8083/actuator/health "Transaction Service"
+                                check http://localhost:8084/actuator/health "Merchant Service"
+                                check http://localhost:8085/actuator/health "Notification Service"
+                                check http://localhost:8086/actuator/health "Savings Service"
+                                check http://localhost:8087/actuator/health "Audit Service"
+                                check http://localhost/health              "Frontend"
+
+                                echo "All smoke tests passed!"
+                            '
+                    """
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------
+    // Post-pipeline actions
+    // -------------------------------------------------------
+    post {
+        success {
+            echo "Pipeline completed successfully — Build #${env.BUILD_NUMBER}"
+        }
+        failure {
+            echo "Pipeline FAILED — Build #${env.BUILD_NUMBER}"
+        }
+        always {
+            // Clean workspace to free disk space
+            cleanWs()
+        }
+    }
+}

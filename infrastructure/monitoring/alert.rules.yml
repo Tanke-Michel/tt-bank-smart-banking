@@ -1,0 +1,146 @@
+# =============================================================
+# Prometheus Alerting Rules — Smart Banking System
+# =============================================================
+
+groups:
+
+  # -----------------------------------------------------------
+  # Service Availability Alerts
+  # -----------------------------------------------------------
+  - name: service_availability
+    rules:
+
+      - alert: ServiceDown
+        expr: up{job=~"api-gateway|auth-service|wallet-service|transaction-service|merchant-service|notification-service|savings-service|audit-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is DOWN"
+          description: "{{ $labels.job }} has been unreachable for more than 1 minute. Instance: {{ $labels.instance }}"
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) by (job)
+          /
+          sum(rate(http_server_requests_seconds_count[5m])) by (job)
+          > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.job }}"
+          description: "{{ $labels.job }} has a 5xx error rate above 5% for the last 2 minutes."
+
+  # -----------------------------------------------------------
+  # Performance Alerts
+  # -----------------------------------------------------------
+  - name: performance
+    rules:
+
+      - alert: SlowAPIResponse
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_requests_seconds_bucket[5m])) by (le, job)
+          ) > 2
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow API responses on {{ $labels.job }}"
+          description: "95th percentile response time is above 2 seconds for {{ $labels.job }}."
+
+      - alert: HighJVMHeapUsage
+        expr: |
+          jvm_memory_used_bytes{area="heap"}
+          / jvm_memory_max_bytes{area="heap"}
+          > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High JVM heap usage on {{ $labels.job }}"
+          description: "JVM heap usage is above 85% on {{ $labels.job }}."
+
+  # -----------------------------------------------------------
+  # Infrastructure Alerts
+  # -----------------------------------------------------------
+  - name: infrastructure
+    rules:
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on VPS"
+          description: "VPS CPU usage is above 85% for 5 minutes."
+
+      - alert: HighMemoryUsage
+        expr: |
+          (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)
+          / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on VPS"
+          description: "VPS memory usage is above 85%."
+
+      - alert: LowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{fstype!="tmpfs"}
+          / node_filesystem_size_bytes{fstype!="tmpfs"}) * 100 < 15
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space on VPS"
+          description: "Less than 15% disk space remaining on {{ $labels.mountpoint }}."
+
+      - alert: PostgreSQLDown
+        expr: up{job="postgresql"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is DOWN"
+          description: "PostgreSQL database is unreachable."
+
+      - alert: RabbitMQDown
+        expr: up{job="rabbitmq"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ is DOWN"
+          description: "RabbitMQ message broker is unreachable."
+
+  # -----------------------------------------------------------
+  # Business Metric Alerts
+  # -----------------------------------------------------------
+  - name: business_metrics
+    rules:
+
+      - alert: HighAuthFailureRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{job="auth-service", status="401"}[5m]))
+          > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failure rate"
+          description: "More than 10 failed auth attempts per second — possible brute-force attack."
+
+      - alert: GatewayRateLimitHit
+        expr: |
+          sum(rate(http_server_requests_seconds_count{job="api-gateway", status="429"}[5m]))
+          > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API Gateway rate limits being triggered"
+          description: "More than 5 rate-limited (429) responses per second from the gateway."

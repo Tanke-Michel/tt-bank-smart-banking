@@ -1,0 +1,137 @@
+# =============================================================
+# Monitoring Stack — Docker Compose
+# Prometheus + Grafana + exporters
+#
+# Run alongside the main stack:
+#   docker compose -f docker-compose.yml \
+#                  -f ../monitoring/docker-compose.monitoring.yml \
+#                  up -d
+#
+# OR run standalone in /opt/monitoring:
+#   docker compose up -d
+# =============================================================
+
+version: '3.9'
+
+networks:
+  tt-bank-net:
+    external: true       # must match the main compose network name
+  monitoring-net:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+services:
+
+  # -----------------------------------------------------------
+  # Prometheus — metrics collection
+  # -----------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: tt-bank-prometheus
+    networks:
+      - tt-bank-net
+      - monitoring-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # -----------------------------------------------------------
+  # Grafana — dashboards and alerting
+  # -----------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: tt-bank-grafana
+    networks:
+      - monitoring-net
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP:     'false'
+      GF_SERVER_ROOT_URL:         '%(protocol)s://%(domain)s/grafana'
+      GF_SERVER_SERVE_FROM_SUB_PATH: 'true'
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # -----------------------------------------------------------
+  # Alertmanager — routes alerts to email/Slack
+  # -----------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: tt-bank-alertmanager
+    networks:
+      - monitoring-net
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    restart: unless-stopped
+
+  # -----------------------------------------------------------
+  # Node Exporter — VPS host metrics (CPU, memory, disk)
+  # -----------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: tt-bank-node-exporter
+    networks:
+      - monitoring-net
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
+  # -----------------------------------------------------------
+  # PostgreSQL Exporter — database metrics
+  # -----------------------------------------------------------
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: tt-bank-postgres-exporter
+    networks:
+      - tt-bank-net
+      - monitoring-net
+    ports:
+      - "9187:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-admin123}@postgres:5432/tt_bank_auth?sslmode=disable"
+    restart: unless-stopped
+    depends_on:
+      - prometheus

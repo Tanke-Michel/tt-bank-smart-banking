@@ -1,0 +1,230 @@
+---
+# =============================================================
+# Playbook 1: setup-vps.yml
+# Provisions the Contabo VPS from scratch
+#
+# What it does:
+#   - Updates system packages
+#   - Installs Docker Engine (official repo, not snap)
+#   - Installs Docker Compose plugin
+#   - Configures UFW firewall rules
+#   - Creates a dedicated non-root app user
+#   - Creates the deployment directory
+#   - Hardens SSH configuration
+#
+# Run:
+#   ansible-playbook -i inventory.yml playbooks/01-setup-vps.yml
+#   (requires sudo access on VPS)
+# =============================================================
+
+- name: Provision Contabo VPS for Smart Banking System
+  hosts: banking_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    docker_gpg_url: https://download.docker.com/linux/ubuntu/gpg
+    docker_repo_url: https://download.docker.com/linux/ubuntu
+
+  tasks:
+
+    # ----------------------------------------------------------
+    # System updates
+    # ----------------------------------------------------------
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Upgrade all installed packages
+      apt:
+        upgrade: dist
+        autoremove: true
+        autoclean: true
+
+    - name: Install essential system packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - ufw
+          - fail2ban
+          - unzip
+          - git
+          - htop
+          - net-tools
+        state: present
+
+    # ----------------------------------------------------------
+    # Docker installation (official Docker repo)
+    # ----------------------------------------------------------
+    - name: Create Docker GPG keyring directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: "{{ docker_gpg_url }}"
+        keyring: /etc/apt/keyrings/docker.gpg
+        state: present
+
+    - name: Add Docker apt repository
+      apt_repository:
+        repo: >
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg]
+          {{ docker_repo_url }}
+          {{ ansible_distribution_release }} stable
+        state: present
+        filename: docker
+
+    - name: Install Docker Engine and Compose plugin
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Enable and start Docker service
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    # ----------------------------------------------------------
+    # Application user setup
+    # ----------------------------------------------------------
+    - name: Create dedicated application group
+      group:
+        name: "{{ app_group }}"
+        state: present
+
+    - name: Create dedicated application user
+      user:
+        name: "{{ app_user }}"
+        group: "{{ app_group }}"
+        groups:
+          - docker      # allow Docker commands without sudo
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    - name: Create deployment directory
+      file:
+        path: "{{ deploy_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0750'
+
+    # ----------------------------------------------------------
+    # UFW Firewall configuration
+    # ----------------------------------------------------------
+    - name: Allow SSH (port 22)
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+
+    - name: Allow HTTP (port 80)
+      ufw:
+        rule: allow
+        port: '80'
+        proto: tcp
+
+    - name: Allow HTTPS (port 443)
+      ufw:
+        rule: allow
+        port: '443'
+        proto: tcp
+
+    - name: Deny all other inbound traffic by default
+      ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+
+    - name: Enable outbound traffic
+      ufw:
+        policy: allow
+        direction: outgoing
+
+    # Note: Internal Docker ports (8080-8087, 5432, 6379, 5672, 15672)
+    # are NOT opened to the public — only Nginx port 80/443 is exposed.
+    # Services communicate through Docker's internal network.
+
+    # ----------------------------------------------------------
+    # Fail2ban — brute-force SSH protection
+    # ----------------------------------------------------------
+    - name: Ensure fail2ban is started and enabled
+      systemd:
+        name: fail2ban
+        enabled: true
+        state: started
+
+    # ----------------------------------------------------------
+    # SSH hardening
+    # ----------------------------------------------------------
+    - name: Disable SSH password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+        state: present
+      notify: Restart SSH
+
+    - name: Disable SSH root login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        state: present
+      notify: Restart SSH
+
+    - name: Set SSH MaxAuthTries
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?MaxAuthTries'
+        line: 'MaxAuthTries 3'
+        state: present
+      notify: Restart SSH
+
+    # ----------------------------------------------------------
+    # Install Nginx on host (reverse proxy in front of Docker)
+    # ----------------------------------------------------------
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Enable and start Nginx
+      systemd:
+        name: nginx
+        enabled: true
+        state: started
+
+    # ----------------------------------------------------------
+    # Verify Docker is working
+    # ----------------------------------------------------------
+    - name: Verify Docker installation
+      command: docker --version
+      register: docker_version_output
+      changed_when: false
+
+    - name: Print Docker version
+      debug:
+        msg: "{{ docker_version_output.stdout }}"
+
+  handlers:
+    - name: Restart SSH
+      systemd:
+        name: sshd
+        state: restarted

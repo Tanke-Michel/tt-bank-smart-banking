@@ -1,0 +1,49 @@
+---
+# =============================================================
+# ConfigMap — tt-bank-config
+# Non-sensitive configuration shared across all services.
+# Secrets (passwords, JWT key) live in 02-secrets.yml.
+# =============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tt-bank-config
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: smart-banking-system
+data:
+  # ── Database ─────────────────────────────────────────────
+  POSTGRES_USER: "admin"
+  POSTGRES_DB:   "tt_bank_auth"
+
+  # ── RabbitMQ ─────────────────────────────────────────────
+  RABBITMQ_USER: "admin"
+  SPRING_RABBITMQ_HOST: "rabbitmq-service"
+  SPRING_RABBITMQ_PORT: "5672"
+
+  # ── Redis ────────────────────────────────────────────────
+  SPRING_DATA_REDIS_HOST: "redis-service"
+  SPRING_DATA_REDIS_PORT: "6379"
+
+  # ── Spring profile ───────────────────────────────────────
+  SPRING_PROFILES_ACTIVE: "docker"
+
+  # ── JWT expiry (ms) ──────────────────────────────────────
+  JWT_ACCESS_TOKEN_EXPIRATION:  "86400000"
+  JWT_REFRESH_TOKEN_EXPIRATION: "604800000"
+
+  # ── SMTP ─────────────────────────────────────────────────
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+
+  # ── Internal service base URLs (K8s DNS) ─────────────────
+  WALLET_SERVICE_BASE_URL:      "http://wallet-service:8082"
+  AUTH_SERVICE_BASE_URL:        "http://auth-service:8081"
+  TRANSACTION_SERVICE_BASE_URL: "http://transaction-service:8083"
+  MERCHANT_SERVICE_BASE_URL:    "http://merchant-service:8084"
+  SAVINGS_SERVICE_BASE_URL:     "http://savings-service:8086"
+  AUDIT_SERVICE_BASE_URL:       "http://audit-service:8087"
+
+  # ── Actuator ─────────────────────────────────────────────
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS:   "always"

@@ -1,0 +1,12 @@
+---
+# =============================================================
+# Namespace — tt-bank
+# All Smart Banking System resources live in this namespace.
+# =============================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tt-bank
+  labels:
+    app.kubernetes.io/name: smart-banking-system
+    app.kubernetes.io/managed-by: kubectl

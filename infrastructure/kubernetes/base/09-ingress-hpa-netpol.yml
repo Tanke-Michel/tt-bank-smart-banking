@@ -1,0 +1,233 @@
+---
+# =============================================================
+# Ingress — NGINX Ingress Controller
+# Routes external HTTP/HTTPS traffic into the cluster.
+# Install the controller first:
+#   kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.10.1/deploy/static/provider/cloud/deploy.yaml
+#
+# For TLS: install cert-manager and update tls section with
+# your actual domain and ClusterIssuer.
+# =============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tt-bank-ingress
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: smart-banking-system
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    # Rate limiting (brute-force protection on auth)
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    # CORS is handled by the API Gateway — do not set here
+    # TLS (uncomment after setting up cert-manager):
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  # TLS (uncomment and replace yourdomain.com):
+  # tls:
+  #   - hosts:
+  #       - yourdomain.com
+  #     secretName: tt-bank-tls
+  rules:
+    - host: yourdomain.com   # replace with your actual domain
+      http:
+        paths:
+          # All /api/** requests → API Gateway
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  name: http
+          # Everything else → React frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  name: http
+
+---
+# =============================================================
+# HorizontalPodAutoscaler — API Gateway
+# Scale 2→5 replicas based on CPU utilisation
+# =============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway-hpa
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: api-gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# =============================================================
+# HorizontalPodAutoscaler — Auth Service
+# =============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth-service-hpa
+  namespace: tt-bank
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+# =============================================================
+# HorizontalPodAutoscaler — Wallet Service
+# =============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: wallet-service-hpa
+  namespace: tt-bank
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: wallet-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+# =============================================================
+# HorizontalPodAutoscaler — Transaction Service
+# =============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: transaction-service-hpa
+  namespace: tt-bank
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: transaction-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+# =============================================================
+# NetworkPolicy — Restrict inter-service traffic
+# Only the API Gateway can talk to backend services.
+# Backend services can only talk to infrastructure (DB, MQ).
+# This enforces the layered architecture at the network level.
+# =============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-backends
+  namespace: tt-bank
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow traffic from API Gateway pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - protocol: TCP
+          port: 8081
+        - protocol: TCP
+          port: 8082
+        - protocol: TCP
+          port: 8083
+        - protocol: TCP
+          port: 8084
+        - protocol: TCP
+          port: 8085
+        - protocol: TCP
+          port: 8086
+        - protocol: TCP
+          port: 8087
+    # Allow Prometheus to scrape metrics from all services
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8081
+        - protocol: TCP
+          port: 8082
+        - protocol: TCP
+          port: 8083
+        - protocol: TCP
+          port: 8084
+        - protocol: TCP
+          port: 8085
+        - protocol: TCP
+          port: 8086
+        - protocol: TCP
+          port: 8087
+    # Allow inter-service HTTP calls (transaction→wallet, merchant→wallet, savings→wallet)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: transaction-service
+        - podSelector:
+            matchLabels:
+              app: merchant-service
+        - podSelector:
+            matchLabels:
+              app: savings-service
+      ports:
+        - protocol: TCP
+          port: 8082

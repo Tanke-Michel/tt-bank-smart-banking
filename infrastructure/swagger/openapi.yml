@@ -1,0 +1,2125 @@
+openapi: 3.0.3
+
+info:
+  title: Smart Banking System API
+  description: |
+    Complete REST API for the TT-BANK Smart Banking System.
+
+    **Architecture:** Microservices — all requests enter through the API Gateway on port 8080.
+    The gateway validates the JWT Bearer token before routing to the appropriate backend service.
+
+    **Authentication flow:**
+    1. `POST /api/v1/auth/register` — create account
+    2. `POST /api/v1/auth/verify-email` — verify OTP sent by email
+    3. `POST /api/v1/auth/login` — receive `accessToken` and `refreshToken`
+    4. Include `Authorization: Bearer <accessToken>` on all subsequent requests
+
+    **Currency:** Primary currency is **XAF** (Central African CFA franc). Also supports USD, EUR, GBP.
+
+    **Base URL (local dev):** `http://localhost:8080`
+    **Base URL (production):** `https://yourdomain.com`
+  version: "1.0.0"
+  contact:
+    name: Smart Banking Dev Team
+
+servers:
+  - url: http://localhost:8080
+    description: Local development (API Gateway)
+  - url: https://yourdomain.com
+    description: Production (replace with actual domain)
+
+# =============================================================
+# Security scheme — JWT Bearer token (HS256)
+# =============================================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        JWT access token issued by POST /api/v1/auth/login.
+        Include as: Authorization: Bearer <token>
+
+  # =============================================================
+  # Reusable schemas — built from actual Java DTOs
+  # =============================================================
+  schemas:
+
+    # ── Auth ──────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [fullName, email, phoneNumber, password]
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 100
+          example: "Jean-Pierre Nkomo"
+        email:
+          type: string
+          format: email
+          example: "jeanpierre@example.com"
+        phoneNumber:
+          type: string
+          pattern: '^\\+?[0-9]{8,15}$'
+          example: "+237612345678"
+        password:
+          type: string
+          minLength: 8
+          format: password
+          example: "SecurePass123!"
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "jeanpierre@example.com"
+        password:
+          type: string
+          format: password
+          example: "SecurePass123!"
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiJ9..."
+        refreshToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiJ9..."
+        tokenType:
+          type: string
+          example: "Bearer"
+        userId:
+          type: integer
+          format: int64
+          example: 1
+        fullName:
+          type: string
+          example: "Jean-Pierre Nkomo"
+        email:
+          type: string
+          example: "jeanpierre@example.com"
+        role:
+          $ref: '#/components/schemas/UserRole'
+        expiresIn:
+          type: integer
+          format: int64
+          description: Token validity in milliseconds
+          example: 86400000
+
+    VerifyEmailRequest:
+      type: object
+      required: [email, otp]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "jeanpierre@example.com"
+        otp:
+          type: string
+          minLength: 6
+          maxLength: 6
+          example: "482931"
+
+    ResendOtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "jeanpierre@example.com"
+
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiJ9..."
+
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "jeanpierre@example.com"
+
+    ResetPasswordRequest:
+      type: object
+      required: [email, otp, newPassword]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "jeanpierre@example.com"
+        otp:
+          type: string
+          minLength: 6
+          maxLength: 6
+          example: "183947"
+        newPassword:
+          type: string
+          minLength: 8
+          format: password
+          example: "NewSecurePass456!"
+
+    ChangePasswordRequest:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+          format: password
+          example: "OldPass123!"
+        newPassword:
+          type: string
+          minLength: 8
+          format: password
+          example: "NewPass456!"
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Operation completed successfully."
+
+    UserRole:
+      type: string
+      enum: [USER, MERCHANT, ADMIN]
+
+    # ── Wallet ────────────────────────────────────────────────
+    WalletResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        userId:
+          type: integer
+          format: int64
+          example: 1
+        walletNumber:
+          type: string
+          example: "WLT-20240601-00001"
+        ownerName:
+          type: string
+          example: "Jean-Pierre Nkomo"
+        email:
+          type: string
+          example: "jeanpierre@example.com"
+        phoneNumber:
+          type: string
+          example: "+237612345678"
+        balance:
+          type: number
+          format: decimal
+          example: 125000.00
+        currency:
+          $ref: '#/components/schemas/Currency'
+        status:
+          $ref: '#/components/schemas/WalletStatus'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-06-01T10:00:00"
+
+    DepositRequest:
+      type: object
+      required: [amount, description]
+      properties:
+        amount:
+          type: number
+          format: decimal
+          minimum: 1.00
+          example: 50000.00
+        description:
+          type: string
+          example: "Monthly salary deposit"
+
+    WithdrawRequest:
+      type: object
+      required: [amount, description]
+      properties:
+        amount:
+          type: number
+          format: decimal
+          minimum: 1.00
+          example: 10000.00
+        description:
+          type: string
+          example: "ATM withdrawal"
+
+    Currency:
+      type: string
+      enum: [XAF, USD, EUR, GBP]
+
+    WalletStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED, CLOSED]
+
+    # ── Transaction ───────────────────────────────────────────
+    TransferRequest:
+      type: object
+      required: [recipientEmail, amount]
+      properties:
+        recipientEmail:
+          type: string
+          format: email
+          description: Recipient identified by their registered email address
+          example: "recipient@example.com"
+        amount:
+          type: number
+          format: decimal
+          minimum: 1
+          example: 5000.00
+        description:
+          type: string
+          maxLength: 255
+          example: "Payment for services"
+
+    TransactionResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 42
+        referenceCode:
+          type: string
+          example: "TXN-20240601-ABC123"
+        type:
+          $ref: '#/components/schemas/TransactionType'
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        senderWalletNumber:
+          type: string
+          example: "WLT-20240601-00001"
+        senderEmail:
+          type: string
+          example: "sender@example.com"
+        receiverWalletNumber:
+          type: string
+          example: "WLT-20240601-00002"
+        receiverEmail:
+          type: string
+          example: "recipient@example.com"
+        amount:
+          type: number
+          format: decimal
+          example: 5000.00
+        currency:
+          type: string
+          example: "XAF"
+        description:
+          type: string
+          example: "Payment for services"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-06-01T14:30:00"
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2024-06-01T14:30:01"
+
+    TransactionType:
+      type: string
+      enum: [TRANSFER, DEPOSIT, WITHDRAWAL, MERCHANT_PAYMENT]
+
+    TransactionStatus:
+      type: string
+      enum: [PENDING, COMPLETED, FAILED, REVERSED]
+
+    # ── Merchant ──────────────────────────────────────────────
+    RegisterMerchantRequest:
+      type: object
+      required: [businessName, businessEmail, businessPhone, businessAddress, businessCategory, walletNumber]
+      properties:
+        businessName:
+          type: string
+          minLength: 2
+          maxLength: 100
+          example: "Nkomo Electronics"
+        businessEmail:
+          type: string
+          format: email
+          example: "nkomo.electronics@example.com"
+        businessPhone:
+          type: string
+          pattern: '^\\+?[0-9]{8,15}$'
+          example: "+237677890123"
+        businessAddress:
+          type: string
+          maxLength: 255
+          example: "Avenue Kennedy, Yaoundé, Cameroun"
+        businessCategory:
+          $ref: '#/components/schemas/BusinessCategory'
+        description:
+          type: string
+          maxLength: 500
+          example: "Electronics retailer specialising in smartphones and accessories"
+        walletNumber:
+          type: string
+          description: Existing wallet for receiving merchant payments
+          example: "WLT-20240601-00001"
+
+    MerchantPaymentRequest:
+      type: object
+      required: [merchantCode, customerWalletNumber, amount]
+      properties:
+        merchantCode:
+          type: string
+          description: Merchant code decoded from the QR code
+          example: "MCH-20240601-XY9Z"
+        customerWalletNumber:
+          type: string
+          description: Customer's wallet number to debit
+          example: "WLT-20240601-00002"
+        amount:
+          type: number
+          format: decimal
+          minimum: 1
+          example: 15000.00
+        description:
+          type: string
+          maxLength: 255
+          example: "Purchase of phone case"
+
+    BusinessCategory:
+      type: string
+      enum:
+        - RETAIL
+        - FOOD_AND_BEVERAGE
+        - HEALTHCARE
+        - EDUCATION
+        - TRANSPORT
+        - TELECOMMUNICATIONS
+        - UTILITIES
+        - ENTERTAINMENT
+        - SERVICES
+        - OTHER
+
+    MerchantStatus:
+      type: string
+      enum: [PENDING, ACTIVE, SUSPENDED, REJECTED]
+
+    AdminStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: '#/components/schemas/MerchantStatus'
+        reason:
+          type: string
+          example: "Account verified after document review."
+
+    # ── Savings ───────────────────────────────────────────────
+    CreateGroupRequest:
+      type: object
+      required: [name, contributionAmount, payoutCycle, maxMembers, startDate, walletNumber]
+      properties:
+        name:
+          type: string
+          minLength: 3
+          maxLength: 100
+          example: "Family Tontine 2024"
+        description:
+          type: string
+          maxLength: 500
+          example: "Monthly savings group for family members"
+        contributionAmount:
+          type: number
+          format: decimal
+          minimum: 100
+          example: 25000.00
+        payoutCycle:
+          $ref: '#/components/schemas/PayoutCycle'
+        maxMembers:
+          type: integer
+          minimum: 2
+          maximum: 50
+          example: 10
+        startDate:
+          type: string
+          format: date
+          description: Must be a future date
+          example: "2024-07-01"
+        walletNumber:
+          type: string
+          description: Creator's wallet number for contributions and payouts
+          example: "WLT-20240601-00001"
+
+    JoinGroupRequest:
+      type: object
+      required: [walletNumber]
+      properties:
+        walletNumber:
+          type: string
+          description: Member's wallet number for contribution debits and payout credits
+          example: "WLT-20240601-00003"
+
+    ContributeRequest:
+      type: object
+      required: [walletNumber]
+      properties:
+        walletNumber:
+          type: string
+          description: Member's wallet number to debit the contribution amount from
+          example: "WLT-20240601-00003"
+
+    GroupResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Family Tontine 2024"
+        description:
+          type: string
+          example: "Monthly savings group for family members"
+        creatorUserId:
+          type: integer
+          format: int64
+          example: 1
+        creatorEmail:
+          type: string
+          example: "creator@example.com"
+        contributionAmount:
+          type: number
+          format: decimal
+          example: 25000.00
+        currency:
+          type: string
+          example: "XAF"
+        payoutCycle:
+          $ref: '#/components/schemas/PayoutCycle'
+        maxMembers:
+          type: integer
+          example: 10
+        currentMemberCount:
+          type: integer
+          example: 4
+        currentRound:
+          type: integer
+          example: 1
+        totalRounds:
+          type: integer
+          example: 10
+        status:
+          $ref: '#/components/schemas/GroupStatus'
+        startDate:
+          type: string
+          format: date
+          example: "2024-07-01"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-06-01T09:00:00"
+
+    PayoutCycle:
+      type: string
+      enum: [WEEKLY, BIWEEKLY, MONTHLY]
+
+    GroupStatus:
+      type: string
+      enum: [PENDING, ACTIVE, COMPLETED, CANCELLED]
+
+    # ── Audit ─────────────────────────────────────────────────
+    AuditEventResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        eventDomain:
+          $ref: '#/components/schemas/EventDomain'
+        eventType:
+          $ref: '#/components/schemas/EventType'
+        referenceCode:
+          type: string
+          example: "TXN-20240601-ABC123"
+        actorEmail:
+          type: string
+          example: "jeanpierre@example.com"
+        summary:
+          type: string
+          example: "Transfer of 5000.00 XAF from WLT-001 to WLT-002 completed"
+        rawPayload:
+          type: string
+          description: Full JSON event payload as stored
+          example: '{"amount":5000.00,"currency":"XAF",...}'
+        eventTimestamp:
+          type: string
+          format: date-time
+          example: "2024-06-01T14:30:01"
+        receivedAt:
+          type: string
+          format: date-time
+          example: "2024-06-01T14:30:01.123"
+
+    EventDomain:
+      type: string
+      enum: [WALLET, TRANSACTION, MERCHANT, SAVINGS]
+
+    EventType:
+      type: string
+      enum:
+        - WALLET_CREATED
+        - WALLET_FUNDED
+        - WALLET_WITHDRAWN
+        - TRANSACTION_INITIATED
+        - TRANSACTION_COMPLETED
+        - TRANSACTION_FAILED
+        - MERCHANT_REGISTERED
+        - MERCHANT_PAYMENT_INITIATED
+        - MERCHANT_PAYMENT_COMPLETED
+        - MERCHANT_PAYMENT_FAILED
+        - SAVINGS_GROUP_CREATED
+        - SAVINGS_MEMBER_JOINED
+        - SAVINGS_CONTRIBUTION_MADE
+        - SAVINGS_PAYOUT_PROCESSED
+        - UNKNOWN
+
+    # ── Shared ────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 400
+        error:
+          type: string
+          example: "Bad Request"
+        message:
+          type: string
+          example: "Validation failed: email must be a valid email address"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-06-01T14:30:00"
+        path:
+          type: string
+          example: "/api/v1/auth/register"
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid JWT Bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Valid token but insufficient role (e.g. non-ADMIN accessing /api/v1/admin/**)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Request body failed validation constraints
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+# Default security — applied to every operation unless overridden
+security:
+  - BearerAuth: []
+
+# =============================================================
+# API Paths
+# =============================================================
+paths:
+
+  # ============================================================
+  # AUTH SERVICE — /api/v1/auth/**
+  # ============================================================
+
+  /api/v1/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new user account
+      description: >
+        Creates a new user account. Sends a 6-digit OTP to the provided
+        email address. The account is inactive until the OTP is verified
+        via POST /api/v1/auth/verify-email.
+      security: []   # Public — no token required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created — OTP sent to email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: "Registration successful. Please check your email for the verification OTP."
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Email or phone number already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/verify-email:
+    post:
+      tags: [Authentication]
+      summary: Verify email with OTP
+      description: Activates the user account using the 6-digit OTP sent to the registered email. OTP expires after 10 minutes.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+      responses:
+        '200':
+          description: Email verified — account is now active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Invalid or expired OTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/resend-verification:
+    post:
+      tags: [Authentication]
+      summary: Resend email verification OTP
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendOtpRequest'
+      responses:
+        '200':
+          description: New OTP sent to email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate and obtain JWT tokens
+      description: Returns an access token (24h) and a refresh token (7d). Email must be verified before login.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials or email not verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      description: Issues a new access token using a valid refresh token. Does not require the Bearer header.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Refresh token expired or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Invalidate the current access token
+      description: Adds the current access token to the Redis blacklist. All subsequent requests with this token will be rejected.
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get current authenticated user profile
+      responses:
+        '200':
+          description: Current user details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Authentication]
+      summary: Request a password reset OTP
+      description: Sends a 6-digit OTP to the user's registered email for password reset.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotPasswordRequest'
+      responses:
+        '200':
+          description: Reset OTP sent to email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Reset password using OTP
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Invalid or expired OTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/change-password:
+    post:
+      tags: [Authentication]
+      summary: Change password (authenticated)
+      description: Requires a valid access token. Changes the password for the currently authenticated user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Current password is incorrect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============================================================
+  # WALLET SERVICE — /api/v1/wallet/**
+  # ============================================================
+
+  /api/v1/wallet:
+    post:
+      tags: [Wallet]
+      summary: Create a wallet for the authenticated user
+      description: Creates a new XAF wallet linked to the authenticated user. Each user can only have one wallet.
+      responses:
+        '201':
+          description: Wallet created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '409':
+          description: User already has a wallet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/wallet/create:
+    post:
+      tags: [Wallet]
+      summary: Create wallet (alternate endpoint)
+      description: Identical to POST /api/v1/wallet — provided for REST consistency.
+      responses:
+        '201':
+          description: Wallet created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/wallet/me:
+    get:
+      tags: [Wallet]
+      summary: Get the authenticated user's wallet
+      responses:
+        '200':
+          description: Wallet details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '404':
+          description: User does not have a wallet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/wallet/number/{walletNumber}:
+    get:
+      tags: [Wallet]
+      summary: Look up wallet by wallet number
+      parameters:
+        - name: walletNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "WLT-20240601-00001"
+      responses:
+        '200':
+          description: Wallet found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/wallet/phone/{phoneNumber}:
+    get:
+      tags: [Wallet]
+      summary: Look up wallet by phone number
+      parameters:
+        - name: phoneNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "+237612345678"
+      responses:
+        '200':
+          description: Wallet found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/wallet/deposit:
+    post:
+      tags: [Wallet]
+      summary: Deposit funds into the authenticated user's wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositRequest'
+      responses:
+        '200':
+          description: Deposit successful — returns updated wallet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '400':
+          description: Amount exceeds maximum deposit limit (10,000,000 XAF)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/wallet/withdraw:
+    post:
+      tags: [Wallet]
+      summary: Withdraw funds from the authenticated user's wallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+      responses:
+        '200':
+          description: Withdrawal successful — returns updated wallet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '400':
+          description: Insufficient funds, amount exceeds limit, or daily limit reached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/wallet/transactions:
+    get:
+      tags: [Wallet]
+      summary: Get wallet transaction history
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of wallet transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransactionResponse'
+                  totalElements:
+                    type: integer
+                    example: 142
+                  totalPages:
+                    type: integer
+                    example: 8
+                  number:
+                    type: integer
+                    example: 0
+                  size:
+                    type: integer
+                    example: 20
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/wallet/admin/{walletNumber}/suspend:
+    post:
+      tags: [Wallet, Admin]
+      summary: Suspend a wallet (Admin only)
+      parameters:
+        - name: walletNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "WLT-20240601-00001"
+      responses:
+        '200':
+          description: Wallet suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/wallet/admin/{walletNumber}/reactivate:
+    post:
+      tags: [Wallet, Admin]
+      summary: Reactivate a suspended wallet (Admin only)
+      parameters:
+        - name: walletNumber
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "WLT-20240601-00001"
+      responses:
+        '200':
+          description: Wallet reactivated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================
+  # TRANSACTION SERVICE — /api/v1/transactions/**
+  # ============================================================
+
+  /api/v1/transactions/transfer:
+    post:
+      tags: [Transactions]
+      summary: Transfer funds to another user
+      description: >
+        Transfers money from the authenticated user's wallet to the recipient's wallet.
+        The recipient is identified by their registered email address.
+        The transaction service resolves the email to a wallet via the wallet service.
+        On success, both wallets are updated atomically and a RabbitMQ event is published.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '201':
+          description: Transfer completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Insufficient funds, amount exceeds limits, or self-transfer attempted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Recipient wallet not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/transactions/{referenceCode}:
+    get:
+      tags: [Transactions]
+      summary: Get transaction by reference code
+      parameters:
+        - name: referenceCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "TXN-20240601-ABC123"
+      responses:
+        '200':
+          description: Transaction details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/transactions/history:
+    get:
+      tags: [Transactions]
+      summary: Get full transaction history (sent + received)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated transaction history
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransactionResponse'
+                  totalElements:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/transactions/sent:
+    get:
+      tags: [Transactions]
+      summary: Get transactions sent by the authenticated user
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of sent transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransactionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/transactions/received:
+    get:
+      tags: [Transactions]
+      summary: Get transactions received by the authenticated user
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of received transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransactionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/transactions/{referenceCode}/reverse:
+    post:
+      tags: [Transactions, Admin]
+      summary: Reverse a completed transaction (Admin only)
+      parameters:
+        - name: referenceCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "TXN-20240601-ABC123"
+      responses:
+        '200':
+          description: Transaction reversed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Transaction cannot be reversed (e.g. already reversed or failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================
+  # MERCHANT SERVICE — /api/v1/merchants/**
+  # ============================================================
+
+  /api/v1/merchants/register:
+    post:
+      tags: [Merchants]
+      summary: Register as a merchant
+      description: >
+        Registers the authenticated user as a merchant. The user must already have a wallet.
+        The merchant starts in PENDING status and must be approved by an Admin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterMerchantRequest'
+      responses:
+        '201':
+          description: Merchant registered — awaiting admin approval
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchantCode:
+                    type: string
+                    example: "MCH-20240601-XY9Z"
+                  status:
+                    $ref: '#/components/schemas/MerchantStatus'
+                  message:
+                    type: string
+                    example: "Merchant registration submitted. Awaiting admin approval."
+        '409':
+          description: User is already registered as a merchant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/merchants/me:
+    get:
+      tags: [Merchants]
+      summary: Get the authenticated merchant's profile
+      responses:
+        '200':
+          description: Merchant profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merchantCode:
+                    type: string
+                    example: "MCH-20240601-XY9Z"
+                  businessName:
+                    type: string
+                    example: "Nkomo Electronics"
+                  businessEmail:
+                    type: string
+                    example: "nkomo.electronics@example.com"
+                  businessCategory:
+                    $ref: '#/components/schemas/BusinessCategory'
+                  status:
+                    $ref: '#/components/schemas/MerchantStatus'
+        '404':
+          description: Merchant profile not found for authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/merchants/me/qr-code:
+    get:
+      tags: [Merchants]
+      summary: Generate merchant QR code image
+      description: Returns a 300×300 PNG QR code encoding the merchant's unique merchant code.
+      produces:
+        - image/png
+      responses:
+        '200':
+          description: QR code PNG image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/merchants/me/dashboard:
+    get:
+      tags: [Merchants]
+      summary: Get merchant revenue dashboard data
+      responses:
+        '200':
+          description: Dashboard statistics (total revenue, payment count, etc.)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalRevenue:
+                    type: number
+                    format: decimal
+                    example: 1250000.00
+                  totalPayments:
+                    type: integer
+                    example: 87
+                  todayRevenue:
+                    type: number
+                    format: decimal
+                    example: 45000.00
+                  todayPayments:
+                    type: integer
+                    example: 3
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/merchants/me/payments:
+    get:
+      tags: [Merchants]
+      summary: Get all payments received by the authenticated merchant
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated merchant payment history
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/merchants/pay:
+    post:
+      tags: [Merchants]
+      summary: Pay a merchant via QR code
+      description: >
+        Customer scans the merchant QR code and submits payment.
+        Debits the customer's wallet and credits the merchant's wallet.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MerchantPaymentRequest'
+      responses:
+        '201':
+          description: Payment successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  referenceCode:
+                    type: string
+                    example: "MPY-20240601-ZZZ999"
+                  amount:
+                    type: number
+                    format: decimal
+                    example: 15000.00
+                  merchantName:
+                    type: string
+                    example: "Nkomo Electronics"
+                  status:
+                    type: string
+                    example: "COMPLETED"
+        '400':
+          description: Insufficient funds or merchant not active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/merchants/{merchantCode}:
+    get:
+      tags: [Merchants]
+      summary: Get merchant public profile by merchant code
+      parameters:
+        - name: merchantCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "MCH-20240601-XY9Z"
+      responses:
+        '200':
+          description: Merchant public profile
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/merchants/admin/all:
+    get:
+      tags: [Merchants, Admin]
+      summary: Get all merchants (Admin only)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/MerchantStatus'
+      responses:
+        '200':
+          description: Paginated list of all merchants
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/merchants/admin/{merchantId}/status:
+    put:
+      tags: [Merchants, Admin]
+      summary: Update merchant status (Admin only)
+      description: Approve (ACTIVE), suspend (SUSPENDED), or reject (REJECTED) a merchant.
+      parameters:
+        - name: merchantId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminStatusRequest'
+      responses:
+        '200':
+          description: Merchant status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================
+  # SAVINGS SERVICE — /api/v1/savings/**
+  # ============================================================
+
+  /api/v1/savings/groups:
+    post:
+      tags: [Savings]
+      summary: Create a community savings group
+      description: >
+        Creates a new rotating savings group (tontine). The creator automatically
+        becomes the first member with payout order 1.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupRequest'
+      responses:
+        '201':
+          description: Savings group created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    get:
+      tags: [Savings]
+      summary: List all open savings groups
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of savings groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/GroupResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/mine:
+    get:
+      tags: [Savings]
+      summary: Get savings groups the authenticated user belongs to
+      responses:
+        '200':
+          description: List of groups the user is a member of
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GroupResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/{groupId}:
+    get:
+      tags: [Savings]
+      summary: Get savings group details by ID
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '200':
+          description: Group details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/{groupId}/join:
+    post:
+      tags: [Savings]
+      summary: Join a savings group
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinGroupRequest'
+      responses:
+        '200':
+          description: Joined group successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Group is full, closed, or user is already a member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/{groupId}/contribute:
+    post:
+      tags: [Savings]
+      summary: Make a contribution to the savings group
+      description: Debits the member's wallet by the group's fixed contribution amount.
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContributeRequest'
+      responses:
+        '201':
+          description: Contribution recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Group not active or contribution already made this cycle
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/{groupId}/payout:
+    post:
+      tags: [Savings]
+      summary: Trigger payout to the next eligible member
+      description: Collects all contributions for the current round and credits the next member's wallet.
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 1
+      responses:
+        '200':
+          description: Payout processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Not all members have contributed this round
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/{groupId}/members:
+    get:
+      tags: [Savings]
+      summary: Get group member list
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: List of group members with payout order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    userId:
+                      type: integer
+                      format: int64
+                    email:
+                      type: string
+                    walletNumber:
+                      type: string
+                    payoutOrder:
+                      type: integer
+                    memberStatus:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/{groupId}/contributions:
+    get:
+      tags: [Savings]
+      summary: Get all contributions for a group
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of contributions
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/{groupId}/contributions/mine:
+    get:
+      tags: [Savings]
+      summary: Get the authenticated user's contributions to a group
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: User's contribution history in the group
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/savings/groups/{groupId}/payouts:
+    get:
+      tags: [Savings]
+      summary: Get all payouts for a group
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Payout history for the group
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============================================================
+  # AUDIT SERVICE — /api/v1/admin/** (ADMIN role required)
+  # ============================================================
+
+  /api/v1/admin/audit/events:
+    get:
+      tags: [Audit - Admin Only]
+      summary: List all audit events (paginated)
+      description: Requires ADMIN role. Returns all banking events recorded by the audit service.
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEventResponse'
+                  totalElements:
+                    type: integer
+                    example: 4821
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/audit/events/{id}:
+    get:
+      tags: [Audit - Admin Only]
+      summary: Get audit event by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            example: 42
+      responses:
+        '200':
+          description: Audit event details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/audit/ref/{referenceCode}:
+    get:
+      tags: [Audit - Admin Only]
+      summary: Get audit events by business reference code
+      description: Returns all audit entries related to a specific transaction, payment, or group reference code.
+      parameters:
+        - name: referenceCode
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "TXN-20240601-ABC123"
+      responses:
+        '200':
+          description: Audit events for the reference code
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEventResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/audit/domain/{domain}:
+    get:
+      tags: [Audit - Admin Only]
+      summary: Get audit events by domain
+      parameters:
+        - name: domain
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/EventDomain'
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated audit events for the domain
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/audit/actor/{email}:
+    get:
+      tags: [Audit - Admin Only]
+      summary: Get audit events by actor email
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema:
+            type: string
+            format: email
+            example: "jeanpierre@example.com"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: All audit events generated by the specified user
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/audit/stats:
+    get:
+      tags: [Audit - Admin Only]
+      summary: Get audit statistics summary
+      description: Returns aggregate counts by domain and event type — useful for admin dashboards.
+      responses:
+        '200':
+          description: Audit statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalEvents:
+                    type: integer
+                    example: 4821
+                  byDomain:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    example:
+                      WALLET: 1200
+                      TRANSACTION: 2100
+                      MERCHANT: 800
+                      SAVINGS: 721
+                  byEventType:
+                    type: object
+                    additionalProperties:
+                      type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+# =============================================================
+# Tag descriptions
+# =============================================================
+tags:
+  - name: Authentication
+    description: Registration, login, token management, password operations
+  - name: Wallet
+    description: Wallet creation, deposits, withdrawals, balance queries
+  - name: Transactions
+    description: P2P transfers and transaction history
+  - name: Merchants
+    description: Merchant registration, QR code payments, merchant dashboard
+  - name: Savings
+    description: Community savings groups (tontines) — creation, contributions, payouts
+  - name: Audit - Admin Only
+    description: Full audit trail of all banking events. Requires ADMIN role.
+  - name: Admin
+    description: Administrative operations across services. Requires ADMIN role.

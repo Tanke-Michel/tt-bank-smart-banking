@@ -1,0 +1,36 @@
+# =============================================================
+# Alertmanager Configuration — Smart Banking System
+# Routes critical alerts to email
+# =============================================================
+
+global:
+  smtp_smarthost:     'smtp.gmail.com:587'
+  smtp_from:          'alerts@smartbanking.com'
+  smtp_auth_username: 'CHANGE_ME_your_gmail@gmail.com'
+  smtp_auth_password: 'CHANGE_ME_your_app_password'
+  smtp_require_tls:   true
+
+route:
+  receiver: 'email-alert'
+  group_by: ['alertname', 'job']
+  group_wait:      30s
+  group_interval:  5m
+  repeat_interval: 4h
+
+  routes:
+    - match:
+        severity: critical
+      receiver: 'email-critical'
+      repeat_interval: 1h
+
+receivers:
+  - name: 'email-alert'
+    email_configs:
+      - to: 'team@smartbanking.com'
+        subject: '[WARN] {{ .GroupLabels.alertname }} — Smart Banking'
+
+  - name: 'email-critical'
+    email_configs:
+      - to: 'team@smartbanking.com'
+        subject: '[CRITICAL] {{ .GroupLabels.alertname }} — Smart Banking'
+        send_resolved: true

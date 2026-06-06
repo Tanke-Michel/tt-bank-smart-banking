@@ -1,0 +1,520 @@
+{
+  "info": {
+    "_postman_id": "tt-bank-api-collection-v1",
+    "name": "Smart Banking System API",
+    "description": "Complete Postman collection for the TT-BANK Smart Community Digital Wallet.\n\nSetup:\n1. Set the `baseUrl` variable to your gateway URL (default: http://localhost:8080)\n2. Run `POST /api/v1/auth/login` and the `accessToken` is automatically saved\n3. All protected endpoints use the saved token automatically\n\nAuthors: Tanke Michel & Tim Chantal",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",     "value": "http://localhost:8080", "type": "string" },
+    { "key": "accessToken", "value": "",                      "type": "string" },
+    { "key": "refreshToken","value": "",                      "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/register", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Jean-Pierre Nkomo\",\n  \"email\": \"jeanpierre@example.com\",\n  \"phoneNumber\": \"+237612345678\",\n  \"password\": \"SecurePass123!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/verify-email", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","verify-email"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jeanpierre@example.com\",\n  \"otp\": \"482931\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Resend Verification OTP",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/resend-verification", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","resend-verification"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jeanpierre@example.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', json.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', json.refreshToken);",
+                  "  pm.test('Login successful — token saved', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jeanpierre@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/me", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","me"] }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/refresh", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","refresh"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/logout", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","logout"] }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","forgot-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jeanpierre@example.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","reset-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"jeanpierre@example.com\",\n  \"otp\": \"183947\",\n  \"newPassword\": \"NewSecurePass456!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/change-password", "host": ["{{baseUrl}}"], "path": ["api","v1","auth","change-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"SecurePass123!\",\n  \"newPassword\": \"NewPass456!\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Wallet",
+      "item": [
+        {
+          "name": "Create Wallet",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/create", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","create"] }
+          }
+        },
+        {
+          "name": "Get My Wallet",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/me", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","me"] }
+          }
+        },
+        {
+          "name": "Lookup Wallet by Number",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/number/WLT-20240601-00001", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","number","WLT-20240601-00001"] }
+          }
+        },
+        {
+          "name": "Lookup Wallet by Phone",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/phone/+237612345678", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","phone","+237612345678"] }
+          }
+        },
+        {
+          "name": "Deposit",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/deposit", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","deposit"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 50000.00,\n  \"description\": \"Monthly salary deposit\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Withdraw",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/withdraw", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","withdraw"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10000.00,\n  \"description\": \"ATM withdrawal\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Wallet Transactions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/transactions?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","transactions"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "[ADMIN] Suspend Wallet",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/admin/WLT-20240601-00001/suspend", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","admin","WLT-20240601-00001","suspend"] }
+          }
+        },
+        {
+          "name": "[ADMIN] Reactivate Wallet",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/v1/wallet/admin/WLT-20240601-00001/reactivate", "host": ["{{baseUrl}}"], "path": ["api","v1","wallet","admin","WLT-20240601-00001","reactivate"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Transfer Money",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/transactions/transfer", "host": ["{{baseUrl}}"], "path": ["api","v1","transactions","transfer"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientEmail\": \"recipient@example.com\",\n  \"amount\": 5000.00,\n  \"description\": \"Payment for services\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Transaction by Reference",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/transactions/TXN-20240601-ABC123", "host": ["{{baseUrl}}"], "path": ["api","v1","transactions","TXN-20240601-ABC123"] }
+          }
+        },
+        {
+          "name": "Transaction History (all)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/transactions/history?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","transactions","history"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "Sent Transactions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/transactions/sent?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","transactions","sent"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "Received Transactions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/transactions/received?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","transactions","received"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "[ADMIN] Reverse Transaction",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/v1/transactions/TXN-20240601-ABC123/reverse", "host": ["{{baseUrl}}"], "path": ["api","v1","transactions","TXN-20240601-ABC123","reverse"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Merchants",
+      "item": [
+        {
+          "name": "Register Merchant",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/register", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"businessName\": \"Nkomo Electronics\",\n  \"businessEmail\": \"nkomo.electronics@example.com\",\n  \"businessPhone\": \"+237677890123\",\n  \"businessAddress\": \"Avenue Kennedy, Yaoundé, Cameroun\",\n  \"businessCategory\": \"RETAIL\",\n  \"description\": \"Electronics retailer specialising in smartphones\",\n  \"walletNumber\": \"WLT-20240601-00001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get My Merchant Profile",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/me", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","me"] }
+          }
+        },
+        {
+          "name": "Get My QR Code (PNG)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/me/qr-code", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","me","qr-code"] }
+          }
+        },
+        {
+          "name": "Get Merchant Dashboard",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/me/dashboard", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","me","dashboard"] }
+          }
+        },
+        {
+          "name": "Get My Payments",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/me/payments?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","me","payments"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "Pay Merchant (QR)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/pay", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","pay"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchantCode\": \"MCH-20240601-XY9Z\",\n  \"customerWalletNumber\": \"WLT-20240601-00002\",\n  \"amount\": 15000.00,\n  \"description\": \"Purchase of phone case\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Merchant by Code",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/MCH-20240601-XY9Z", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","MCH-20240601-XY9Z"] }
+          }
+        },
+        {
+          "name": "[ADMIN] Get All Merchants",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/admin/all?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","admin","all"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "[ADMIN] Update Merchant Status",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/merchants/admin/1/status", "host": ["{{baseUrl}}"], "path": ["api","v1","merchants","admin","1","status"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\",\n  \"reason\": \"Documents verified successfully.\"\n}"
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Savings Groups",
+      "item": [
+        {
+          "name": "Create Savings Group",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Family Tontine 2024\",\n  \"description\": \"Monthly savings group for family members\",\n  \"contributionAmount\": 25000.00,\n  \"payoutCycle\": \"MONTHLY\",\n  \"maxMembers\": 10,\n  \"startDate\": \"2024-07-01\",\n  \"walletNumber\": \"WLT-20240601-00001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "List All Groups",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "Get My Groups",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/mine", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","mine"] }
+          }
+        },
+        {
+          "name": "Get Group by ID",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/1", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","1"] }
+          }
+        },
+        {
+          "name": "Join Group",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/1/join", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","1","join"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletNumber\": \"WLT-20240601-00003\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Contribute to Group",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/1/contribute", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","1","contribute"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"walletNumber\": \"WLT-20240601-00003\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Process Payout",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/1/payout", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","1","payout"] }
+          }
+        },
+        {
+          "name": "Get Group Members",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/1/members", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","1","members"] }
+          }
+        },
+        {
+          "name": "Get Group Contributions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/1/contributions?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","1","contributions"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "Get My Contributions",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/1/contributions/mine", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","1","contributions","mine"] }
+          }
+        },
+        {
+          "name": "Get Group Payouts",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/savings/groups/1/payouts", "host": ["{{baseUrl}}"], "path": ["api","v1","savings","groups","1","payouts"] }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "Admin — Audit Log",
+      "item": [
+        {
+          "name": "List All Audit Events",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/audit/events?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","admin","audit","events"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "Get Audit Event by ID",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/audit/events/42", "host": ["{{baseUrl}}"], "path": ["api","v1","admin","audit","events","42"] }
+          }
+        },
+        {
+          "name": "Get Events by Reference Code",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/audit/ref/TXN-20240601-ABC123", "host": ["{{baseUrl}}"], "path": ["api","v1","admin","audit","ref","TXN-20240601-ABC123"] }
+          }
+        },
+        {
+          "name": "Get Events by Domain",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/audit/domain/TRANSACTION?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","admin","audit","domain","TRANSACTION"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "Get Events by Actor Email",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/audit/actor/jeanpierre@example.com?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","v1","admin","audit","actor","jeanpierre@example.com"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] }
+          }
+        },
+        {
+          "name": "Get Audit Statistics",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/v1/admin/audit/stats", "host": ["{{baseUrl}}"], "path": ["api","v1","admin","audit","stats"] }
+          }
+        }
+      ]
+    }
+
+  ]
+}

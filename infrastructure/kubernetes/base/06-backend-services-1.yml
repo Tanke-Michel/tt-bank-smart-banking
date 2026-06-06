@@ -1,0 +1,393 @@
+---
+# =============================================================
+# Wallet Service — Deployment + Service
+# Port 8082 | Deposits, withdrawals, wallet management
+# Depends on: postgres, rabbitmq
+# =============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallet-service
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: wallet-service
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: wallet-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: wallet-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path:   "/actuator/prometheus"
+        prometheus.io/port:   "8082"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: wallet-service
+          image: ttbank/wallet-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8082
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_PROFILES_ACTIVE
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres-service:5432/tt_bank_wallet"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tt-bank-secrets
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_RABBITMQ_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_RABBITMQ_HOST
+            - name: SPRING_RABBITMQ_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_RABBITMQ_PORT
+            - name: SPRING_RABBITMQ_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: RABBITMQ_USER
+            - name: SPRING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tt-bank-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "200m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wallet-service
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: wallet-service
+spec:
+  selector:
+    app: wallet-service
+  ports:
+    - port: 8082
+      targetPort: 8082
+      name: http
+
+---
+# =============================================================
+# Transaction Service — Deployment + Service
+# Port 8083 | P2P transfers; calls wallet-service via HTTP
+# Depends on: postgres, rabbitmq, wallet-service
+# =============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transaction-service
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: transaction-service
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: transaction-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: transaction-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path:   "/actuator/prometheus"
+        prometheus.io/port:   "8083"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: transaction-service
+          image: ttbank/transaction-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8083
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_PROFILES_ACTIVE
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres-service:5432/tt_bank_transaction"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tt-bank-secrets
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_RABBITMQ_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_RABBITMQ_HOST
+            - name: SPRING_RABBITMQ_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_RABBITMQ_PORT
+            - name: SPRING_RABBITMQ_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: RABBITMQ_USER
+            - name: SPRING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tt-bank-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: APP_WALLET_SERVICE_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: WALLET_SERVICE_BASE_URL
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "200m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8083
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8083
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transaction-service
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: transaction-service
+spec:
+  selector:
+    app: transaction-service
+  ports:
+    - port: 8083
+      targetPort: 8083
+      name: http
+
+---
+# =============================================================
+# Merchant Service — Deployment + Service
+# Port 8084 | Merchant registration, QR codes, payments
+# Depends on: postgres, rabbitmq, wallet-service
+# =============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: merchant-service
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: merchant-service
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: merchant-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: merchant-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path:   "/actuator/prometheus"
+        prometheus.io/port:   "8084"
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: merchant-service
+          image: ttbank/merchant-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8084
+              name: http
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_PROFILES_ACTIVE
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres-service:5432/tt_bank_merchant"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tt-bank-secrets
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_RABBITMQ_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_RABBITMQ_HOST
+            - name: SPRING_RABBITMQ_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: SPRING_RABBITMQ_PORT
+            - name: SPRING_RABBITMQ_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: RABBITMQ_USER
+            - name: SPRING_RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tt-bank-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: APP_WALLET_SERVICE_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: WALLET_SERVICE_BASE_URL
+            - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+              valueFrom:
+                configMapKeyRef:
+                  name: tt-bank-config
+                  key: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "200m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8084
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8084
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: merchant-service
+  namespace: tt-bank
+  labels:
+    app.kubernetes.io/name: merchant-service
+spec:
+  selector:
+    app: merchant-service
+  ports:
+    - port: 8084
+      targetPort: 8084
+      name: http

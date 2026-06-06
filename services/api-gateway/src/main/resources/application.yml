@@ -1,0 +1,157 @@
+# =====================================================
+# Smart Banking - API Gateway
+# Port 8080 — single entry point for all services
+# =====================================================
+spring:
+  application:
+    name: api-gateway
+
+  # ===================================================
+  # Spring Cloud Gateway
+  # ===================================================
+  cloud:
+    gateway:
+      # -------------------------------------------------
+      # Global CORS — applied before per-route filters.
+      # The React frontend (Vite dev: 5173) is allowed.
+      # -------------------------------------------------
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - "http://localhost:5173"
+              - "http://localhost:3000"
+              - "http://localhost"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+            allowedHeaders:
+              - "*"
+            exposedHeaders:
+              - Authorization
+              - X-Correlation-Id
+            allowCredentials: true
+            maxAge: 3600
+
+      # -------------------------------------------------
+      # Routes — order matters, more specific first.
+      #
+      # Each route that applies JwtAuthenticationFilter
+      # passes a "public-paths" metadata string so the
+      # filter knows which paths need no token.
+      # -------------------------------------------------
+      routes:
+
+        # -----------------------------------------------
+        # Auth Service — port 8081
+        # PUBLIC paths skip JWT validation.
+        # PROTECTED paths (/logout, /me, /change-password)
+        # require a valid Bearer token.
+        # -----------------------------------------------
+        - id: auth-service
+          uri: http://auth-service:8081
+          predicates:
+            - Path=/api/v1/auth/**
+          filters:
+            - name: JwtAuthenticationFilter
+          metadata:
+            public-paths: "/api/v1/auth/register,/api/v1/auth/login,/api/v1/auth/refresh,/api/v1/auth/verify-email,/api/v1/auth/resend-verification,/api/v1/auth/forgot-password,/api/v1/auth/reset-password"
+
+        # -----------------------------------------------
+        # Wallet Service — port 8082 — ALL protected
+        # -----------------------------------------------
+        - id: wallet-service
+          uri: http://wallet-service:8082
+          predicates:
+            - Path=/api/v1/wallet/**
+          filters:
+            - name: JwtAuthenticationFilter
+
+        # -----------------------------------------------
+        # Transaction Service — port 8083 — ALL protected
+        # -----------------------------------------------
+        - id: transaction-service
+          uri: http://transaction-service:8083
+          predicates:
+            - Path=/api/v1/transactions/**
+          filters:
+            - name: JwtAuthenticationFilter
+
+        # -----------------------------------------------
+        # Merchant Service — port 8084 — ALL protected
+        # -----------------------------------------------
+        - id: merchant-service
+          uri: http://merchant-service:8084
+          predicates:
+            - Path=/api/v1/merchants/**
+          filters:
+            - name: JwtAuthenticationFilter
+
+        # -----------------------------------------------
+        # Notification Service — port 8085 — ALL protected
+        # -----------------------------------------------
+        - id: notification-service
+          uri: http://notification-service:8085
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - name: JwtAuthenticationFilter
+
+        # -----------------------------------------------
+        # Community Savings Service — port 8086 — ALL protected
+        # -----------------------------------------------
+        - id: savings-service
+          uri: http://savings-service:8086
+          predicates:
+            - Path=/api/v1/savings/**
+          filters:
+            - name: JwtAuthenticationFilter
+
+        # -----------------------------------------------
+        # Audit & Admin Service — port 8087
+        # PROTECTED — role check (ADMIN only) is enforced
+        # inside the service itself via @PreAuthorize.
+        # -----------------------------------------------
+        - id: audit-service
+          uri: http://audit-service:8087
+          predicates:
+            - Path=/api/v1/admin/**
+          filters:
+            - name: JwtAuthenticationFilter
+
+server:
+  port: 8080
+
+# =====================================================
+# JWT — MUST be identical to auth-service jwt.secret
+# Both services share the same HS256 signing key.
+# =====================================================
+jwt:
+  secret: 3d7f4a9b2c8e1f5a6d9b3c7e2f8a1d4b7e3c9f2a6b5d8e1c4f7a2b3d6e9f0c1
+
+# =====================================================
+# Actuator — health/info for load balancers & monitors
+# =====================================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+# =====================================================
+# Logging
+# =====================================================
+logging:
+  level:
+    com.example.api_gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
+    reactor.netty: WARN

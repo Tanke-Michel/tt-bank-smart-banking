@@ -1,0 +1,18 @@
+# Secrets - never commit
+**/.env
+infrastructure/docker/.env
+*.env
+
+# Build artifacts
+**/target/
+**/node_modules/
+**/dist/
+**/build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log

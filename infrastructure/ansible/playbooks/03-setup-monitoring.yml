@@ -1,0 +1,64 @@
+---
+# =============================================================
+# Playbook 3: setup-monitoring.yml
+# Installs Prometheus + Grafana on the VPS
+# Configures scrape targets for all 8 Spring Boot services
+#
+# Run:
+#   ansible-playbook -i inventory.yml playbooks/03-setup-monitoring.yml
+# =============================================================
+
+- name: Install and configure monitoring stack
+  hosts: banking_servers
+  become: true
+  gather_facts: false
+
+  vars:
+    monitoring_dir: /opt/monitoring
+    prometheus_version: "2.51.2"
+    grafana_version: "10.4.2"
+
+  tasks:
+
+    - name: Create monitoring directory
+      file:
+        path: "{{ monitoring_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy Prometheus configuration
+      template:
+        src: templates/prometheus.yml.j2
+        dest: "{{ monitoring_dir }}/prometheus.yml"
+        mode: '0644'
+
+    - name: Copy monitoring docker-compose
+      copy:
+        src: "{{ playbook_dir }}/../../monitoring/docker-compose.monitoring.yml"
+        dest: "{{ monitoring_dir }}/docker-compose.yml"
+        mode: '0640'
+
+    - name: Start monitoring stack
+      shell:
+        cmd: docker compose up -d
+        chdir: "{{ monitoring_dir }}"
+
+    - name: Wait for Prometheus to be reachable
+      uri:
+        url: http://localhost:9090/-/healthy
+        status_code: 200
+      retries: 12
+      delay: 5
+
+    - name: Wait for Grafana to be reachable
+      uri:
+        url: http://localhost:3000/api/health
+        status_code: 200
+      retries: 12
+      delay: 5
+
+    - name: Monitoring stack is running
+      debug:
+        msg:
+          - "Prometheus: http://{{ ansible_host }}:9090"
+          - "Grafana:    http://{{ ansible_host }}:3000 (admin/admin — change on first login)"

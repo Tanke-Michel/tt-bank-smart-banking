@@ -1,0 +1,26 @@
+# =============================================================
+# Ansible Inventory — Smart Banking System
+# Contabo VPS target hosts
+#
+# Usage:
+#   ansible -i inventory.yml all -m ping
+#   ansible-playbook -i inventory.yml playbooks/01-setup-vps.yml
+# =============================================================
+
+all:
+  children:
+    # Production VPS servers
+    banking_servers:
+      hosts:
+        vps01:
+          ansible_host: YOUR_VPS_IP        # replace with actual Contabo VPS IP
+          ansible_user: ubuntu             # SSH user
+          ansible_ssh_private_key_file: ~/.ssh/tt_bank_vps
+          ansible_python_interpreter: /usr/bin/python3
+
+      vars:
+        # These vars apply to all hosts in banking_servers
+        deploy_dir: /opt/tt-bank
+        app_user: ttbank
+        app_group: ttbank
+        docker_compose_version: "2.24.0"

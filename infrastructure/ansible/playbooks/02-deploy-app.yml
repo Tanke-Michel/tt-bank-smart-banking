@@ -1,0 +1,143 @@
+---
+# =============================================================
+# Playbook 2: deploy-app.yml
+# Deploys (or updates) the Smart Banking System on the VPS
+#
+# What it does:
+#   - Copies docker-compose.yml and .env to the server
+#   - Copies Nginx site config and enables it
+#   - Pulls latest Docker images from Docker Hub
+#   - Performs a rolling restart (docker compose up -d)
+#   - Waits for all health checks to pass
+#   - Verifies every service is responding
+#
+# Run:
+#   ansible-playbook -i inventory.yml playbooks/02-deploy-app.yml \
+#     --extra-vars "@vault.yml"   # (optional: Ansible Vault for secrets)
+#
+# Variables expected (pass via --extra-vars or Ansible Vault):
+#   postgres_password, redis_password, rabbitmq_password,
+#   jwt_secret, smtp_username, smtp_password
+# =============================================================
+
+- name: Deploy Smart Banking System
+  hosts: banking_servers
+  become: true
+  gather_facts: false
+
+  vars:
+    compose_src:  "{{ playbook_dir }}/../../docker/docker-compose.yml"
+    nginx_src:    "{{ playbook_dir }}/../../nginx/smart-banking.conf"
+    services:
+      - { name: "API Gateway",        port: 8080 }
+      - { name: "Auth Service",       port: 8081 }
+      - { name: "Wallet Service",     port: 8082 }
+      - { name: "Transaction Service",port: 8083 }
+      - { name: "Merchant Service",   port: 8084 }
+      - { name: "Notification Svc",   port: 8085 }
+      - { name: "Savings Service",    port: 8086 }
+      - { name: "Audit Service",      port: 8087 }
+
+  tasks:
+
+    # ----------------------------------------------------------
+    # Copy deployment files to server
+    # ----------------------------------------------------------
+    - name: Copy docker-compose.yml to server
+      copy:
+        src: "{{ compose_src }}"
+        dest: "{{ deploy_dir }}/docker-compose.yml"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0640'
+
+    - name: Write .env file from Ansible variables
+      template:
+        src: templates/env.j2
+        dest: "{{ deploy_dir }}/.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_group }}"
+        mode: '0600'   # owner-read only — secrets protection
+
+    - name: Copy Nginx site configuration
+      copy:
+        src: "{{ nginx_src }}"
+        dest: /etc/nginx/sites-available/smart-banking
+        mode: '0644'
+      notify: Reload Nginx
+
+    - name: Enable Nginx site
+      file:
+        src: /etc/nginx/sites-available/smart-banking
+        dest: /etc/nginx/sites-enabled/smart-banking
+        state: link
+      notify: Reload Nginx
+
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload Nginx
+
+    # ----------------------------------------------------------
+    # Pull latest Docker images
+    # ----------------------------------------------------------
+    - name: Pull latest images from Docker Hub
+      become_user: "{{ app_user }}"
+      shell:
+        cmd: docker compose pull
+        chdir: "{{ deploy_dir }}"
+      register: pull_result
+      changed_when: "'Pulled' in pull_result.stdout"
+
+    # ----------------------------------------------------------
+    # Start / update the stack
+    # ----------------------------------------------------------
+    - name: Start or update containers (rolling update)
+      become_user: "{{ app_user }}"
+      shell:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ deploy_dir }}"
+      register: compose_up_result
+
+    - name: Show compose up output
+      debug:
+        msg: "{{ compose_up_result.stdout_lines }}"
+
+    # ----------------------------------------------------------
+    # Wait for services to become healthy
+    # ----------------------------------------------------------
+    - name: Wait for all services to pass health checks (max 3 min)
+      uri:
+        url: "http://localhost:{{ item.port }}/actuator/health"
+        method: GET
+        return_content: true
+        status_code: 200
+      register: health_result
+      until: "'UP' in health_result.content"
+      retries: 18
+      delay: 10
+      loop: "{{ services }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Health check results summary
+      debug:
+        msg: "{{ item.item.name }} is UP on port {{ item.item.port }}"
+      loop: "{{ health_result.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    # ----------------------------------------------------------
+    # Clean up old images to free disk space
+    # ----------------------------------------------------------
+    - name: Remove dangling Docker images
+      become_user: "{{ app_user }}"
+      shell: docker image prune -f
+      changed_when: false
+
+  handlers:
+    - name: Reload Nginx
+      systemd:
+        name: nginx
+        state: reloaded
