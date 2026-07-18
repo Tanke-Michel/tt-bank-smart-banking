@@ -16,3 +16,4 @@ infrastructure/docker/.env
 
 # Logs
 *.log
+frontend.old/
