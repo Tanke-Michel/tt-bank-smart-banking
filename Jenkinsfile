@@ -17,7 +17,7 @@ pipeline {
         stage('Sync to Deploy Dir') {
             steps {
                 echo 'Syncing source into the deployment directory...'
-                sh 'rsync -a --delete --exclude ".git" --exclude "infrastructure/docker/.env" "$WORKSPACE"/ "$PROJECT_DIR"/'
+                sh 'rsync -rlt --delete --exclude ".git" --exclude "infrastructure/docker/.env" "$WORKSPACE"/ "$PROJECT_DIR"/'
             }
         }
         stage('Build & Test - Backend') {
